@@ -1,7 +1,7 @@
 !< StringiFor, definition of `string` type.
 module stringifor_string_t
 !< StringiFor, definition of `string` type.
-use, intrinsic :: iso_fortran_env, only : iostat_eor
+use, intrinsic :: iso_fortran_env, only : iostat_eor, stdout => output_unit
 use befor64, only : b64_decode, b64_encode
 use face, only : colorize
 use penf, only : I1P, I2P, I4P, I8P, R4P, R8P, R16P, str
@@ -341,6 +341,16 @@ interface verify
   !< Builtin verify overloading.
   module procedure sverify_string_string, sverify_string_character, sverify_character_string
 endinterface verify
+
+interface string
+   module procedure constructor1
+end interface string
+
+interface display
+      module procedure display_str
+end interface display
+
+public :: display
 
 contains
    ! public non TBP
@@ -4489,4 +4499,64 @@ contains
    endif
    decimal_point = decimal_buffer == 'POINT'
    endsubroutine get_decimal_mode
+
+   subroutine display_str( self, msg, unitno )
+   !< Display the contents of a given string
+   !<
+   !<```fortran
+   !< type(string) :: astring
+   !< astring = '   Hello World!'
+   !< call display( astring, "hello-world" )
+   !<```
+   !=> T <<<
+      class( string ), intent( in ) :: self
+      character( len = * ), intent( in ) :: msg
+      integer( i4p ), optional, intent( in ) :: unitno
+
+      integer( i4p ) :: i
+      if( present( unitno ) ) then
+         i = unitno
+      else
+         i = stdout
+      end if
+      if( len_trim( msg ) .NE. 0 ) write( i, "(A)" ) "#" // trim(msg)
+      write( i, "(A)" ) self%chars()
+   end subroutine display_str
+
+   pure function constructor1( c ) result( self )
+   !< Constructor of string from intrinsic fortran data type
+   !<
+   !<```fortran
+   !< type(string) :: astring
+   !< astring = String('hello')
+   !< astring = String( 1 )
+   !< astring = String( 1.0 )
+   !<```
+   !=> T <<<
+      type( string ) :: self
+      class( * ), intent( in ) :: c
+      select type ( c )
+      type is( character( * ) )
+         self = c
+      type is( real(r4p) )
+         self = c
+      type is( real(r8p) )
+         self = c
+#if defined _R16P
+      type is( real(r16p) )
+         self = c
+#endif
+      type is( integer(i1p))
+         self = str(c, .true.)
+      type is( integer(i2p))
+         self = str(c, .true.)
+      type is( integer(i4p))
+         self = str(c, .true.)
+      type is( integer(i8p))
+         self = str(c, .true.)
+      type is( string )
+         self = c
+      end select
+   end function
+
 endmodule stringifor_string_t
