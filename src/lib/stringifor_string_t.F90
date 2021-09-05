@@ -1,7 +1,7 @@
 !< StringiFor, definition of `string` type.
 module stringifor_string_t
 !< StringiFor, definition of `string` type.
-use, intrinsic :: iso_fortran_env, only : iostat_eor
+use, intrinsic :: iso_fortran_env, only : iostat_eor, stdout => output_unit
 use befor64, only : b64_decode, b64_encode
 use face, only : colorize
 use penf, only : I1P, I2P, I4P, I8P, R4P, R8P, R16P, str
@@ -231,6 +231,10 @@ type :: string
     procedure, private, pass(dtv) :: write_unformatted             !< Unformatted output.
     ! miscellanea
     procedure, private, pass(self) :: replace_one_occurrence !< Replace the first occurrence of substring old by new.
+    procedure, private, pass( obj ) :: nmatchstr_1, nmatchstr_2
+    generic, public :: nmatchstr => nmatchstr_1, nmatchstr_2
+    procedure, private, pass( obj ) :: strfind_1, strfind_2
+    generic, public :: strfind => strfind_1, strfind_2
 endtype string
 
 ! internal parameters
@@ -341,6 +345,16 @@ interface verify
   !< Builtin verify overloading.
   module procedure sverify_string_string, sverify_string_character, sverify_character_string
 endinterface verify
+
+interface string
+   module procedure constructor1
+end interface string
+
+interface display
+      module procedure display_str
+end interface display
+
+public :: display
 
 contains
    ! public non TBP
@@ -4489,4 +4503,178 @@ contains
    endif
    decimal_point = decimal_buffer == 'POINT'
    endsubroutine get_decimal_mode
+
+   subroutine display_str( self, msg, unitno )
+   !< Display the contents of a given string
+   !<
+   !<```fortran
+   !< type(string) :: astring
+   !< astring = '   Hello World!'
+   !< call display( astring, "hello-world" )
+   !<```
+   !=> T <<<
+      class( string ), intent( in ) :: self
+      character( len = * ), intent( in ) :: msg
+      integer( i4p ), optional, intent( in ) :: unitno
+
+      integer( i4p ) :: i
+      if( present( unitno ) ) then
+         i = unitno
+      else
+         i = stdout
+      end if
+      if( len_trim( msg ) .NE. 0 ) write( i, "(A)" ) "#" // trim(msg)
+      write( i, "(A)" ) self%chars()
+   end subroutine display_str
+
+   pure function constructor1( c ) result( self )
+   !< Constructor of string from intrinsic fortran data type
+   !<
+   !<```fortran
+   !< type(string) :: astring
+   !< astring = String('hello')
+   !< astring = String( 1 )
+   !< astring = String( 1.0 )
+   !<```
+   !=> T <<<
+      type( string ) :: self
+      class( * ), intent( in ) :: c
+      select type ( c )
+      type is( character( * ) )
+         self = c
+      type is( real(r4p) )
+         self = c
+      type is( real(r8p) )
+         self = c
+#if defined _R16P
+      type is( real(r16p) )
+         self = c
+#endif
+      type is( integer(i1p))
+         self = str(c, .true.)
+      type is( integer(i2p))
+         self = str(c, .true.)
+      type is( integer(i4p))
+         self = str(c, .true.)
+      type is( integer(i8p))
+         self = str(c, .true.)
+      type is( string )
+         self = c
+      end select
+   end function
+
+!----------------------------------------------------------------------------
+!                                                                 NmatchStr
+!----------------------------------------------------------------------------
+
+!> authors: Vikas Sharma, Ph. D.
+! date: 	9 May 2021
+! summary: 	Returns the total number of times the substring pattern is found
+!
+!### Introduction
+! Returns the total number of times the substring @c pattern is found in string.
+!
+!@note
+! Does not handle trailing spaces that can be eliminated by TRIM() so
+! strings should be trimmed when passing into function.
+!@endnote
+
+PURE FUNCTION nmatchstr_1(obj,pattern) RESULT(ans)
+  CLASS( String ), INTENT( IN ) :: obj
+  !! the string to search
+  CHARACTER( LEN = * ), INTENT( IN ) :: pattern
+  !! the pattern to be searched
+  INTEGER( I4P ) :: ans
+  !! number of mathces
+  INTEGER( I4P ) :: ii, n
+
+  ans=0; n = obj%len()
+  DO ii = 1, n
+    IF( (ii + LEN(pattern)-1) .GT. n ) EXIT
+    IF( obj%raw( ii : ii + LEN(pattern)-1 ) .EQ. pattern ) ans=ans+1
+  ENDDO
+ENDFUNCTION nmatchstr_1
+
+!----------------------------------------------------------------------------
+!                                                                 NmatchStr
+!----------------------------------------------------------------------------
+
+!> authors: Vikas Sharma, Ph. D.
+! date: 	9 May 2021
+! summary: 	Returns the total number of times the substring pattern is found
+!
+!### Introduction
+! Returns the total number of times the substring @c pattern is found in string.
+!
+!@note
+! Does not handle trailing spaces that can be eliminated by TRIM() so
+! strings should be trimmed when passing into function.
+!@endnote
+
+PURE FUNCTION nmatchstr_2(obj,pattern) RESULT(ans)
+  CLASS( String ), INTENT( IN ) :: obj
+  !! the string to search
+  TYPE( String ), INTENT( IN ) :: pattern
+  !! the pattern to be searched
+  INTEGER( I4P ) :: ans
+  !! number of mathces
+  INTEGER( I4P ) :: ii, n, m
+
+  ans=0; n = obj%len(); m = pattern%len()
+  DO ii = 1, n
+    IF( (ii + m-1) .GT. n ) EXIT
+    IF( obj%raw( ii : ii + m-1 ) .EQ. pattern%raw( 1:m )) ans=ans+1
+  ENDDO
+ENDFUNCTION nmatchstr_2
+
+!----------------------------------------------------------------------------
+!                                                                 findStr
+!----------------------------------------------------------------------------
+
+!> authors: Vikas Sharma, Ph. D.
+! date: 	9 May 2021
+! summary: 	Returns the indices in a string where substring pattern are found
+!
+!### Introduction
+! Function returns the indices in a string where substring pattern is found.
+
+PURE SUBROUTINE strfind_1( obj, pattern, indices )
+  CLASS( String ), INTENT( IN ) :: obj
+  CHARACTER( LEN = * ), INTENT( IN ) :: pattern
+  INTEGER( I4P ), ALLOCATABLE, INTENT( OUT ) :: indices( : )
+  ! Internal variables
+  INTEGER( I4P ) :: i, n, m, count
+
+  n = obj%len(); m = len(pattern); count = 0
+  IF( ALLOCATED( indices ) ) DEALLOCATE( indices )
+  ALLOCATE( indices( obj%nmatchstr(pattern) ) )
+  DO i = 1, n
+    IF( (i + m - 1) .GT. n ) EXIT
+    IF( obj%raw( i:i + m - 1 ) .EQ. pattern( 1:m ) ) THEN
+      count = count + 1
+      indices( count ) = i
+    END IF
+  END DO
+END SUBROUTINE strfind_1
+
+!----------------------------------------------------------------------------
+!                                                                    strfind
+!----------------------------------------------------------------------------
+
+!> authors: Vikas Sharma, Ph. D.
+! date: 	9 May 2021
+! summary: 	Returns the indices in a string where substring pattern are found
+!
+!### Introduction
+! Function returns the indices in a string where substring pattern is found.
+
+PURE SUBROUTINE strfind_2( obj, pattern, indices )
+  CLASS( String ), INTENT( IN ) :: obj
+  CLASS( String ), INTENT( IN ) :: pattern
+  INTEGER( I4P ), ALLOCATABLE, INTENT( OUT ) :: indices( : )
+  ! Internal variables
+  CALL strfind_1( obj, trim(pattern%chars()), indices )
+END SUBROUTINE strfind_2
+
+
 endmodule stringifor_string_t
